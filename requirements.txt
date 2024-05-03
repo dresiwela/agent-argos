@@ -1,0 +1,5 @@
+norfair
+numpy
+opencv-python
+kafka-python
+json5
