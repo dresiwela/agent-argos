@@ -28,7 +28,7 @@ tracker = Tracker(distance_function='mean_euclidean', distance_threshold=20)
 
 data = np.load('calibration_data.npz')
 K = data['K']
-dist = data['dist']
+dist = data['DistCoeffs']
 Hsat2cctv_inv = data['Hsat2cctv_inv']
 T_gps2sat_inv = data['Hgps2sat_inv']
 
@@ -37,7 +37,7 @@ def pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv):
     pixel_coordinate = cv2.undistortPoints(pixel_coordinate, K, dist, None, K)
     sat_pixel_coordinate = cv2.perspectiveTransform(pixel_coordinate, Hsat2cctv_inv)
     gps_coordinate = cv2.transform(sat_pixel_coordinate, T_gps2sat_inv).flatten()[:2]
-    return gps_coordinate
+    return gps_coordinate[0], gps_coordinate[1]
 
 def create_detection(bbox, score, label):
     ground_contact_x = bbox[0] + bbox[2] / 2
@@ -56,6 +56,5 @@ for payload in data_stream:
         pixel_coordinate = tracked_object.estimate[0]
         class_id = tracked_object.label
         # Velocity = tracked_object.estimate_velocity * scale # pixels/second * meters/pixel
-        gps_coordinate = pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv)
-        lat,long = gps_coordinate[0],gps_coordinate[1]
+        lat,long = pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv)
         publish_to_kafka('gps_coordinates', lat, long, class_id)
