@@ -2,4 +2,5 @@ norfair
 numpy
 opencv-python-headless
 kafka-python
+confluent-kafka-python
 json5

@@ -5,15 +5,28 @@ from kafka import KafkaProducer
 import json
 from kafka.errors import KafkaError
 import os
+from confluent_kafka import Producer
+import socket
 
-producer = KafkaProducer(
-    bootstrap_servers=os.getenv('KAFKA_BOOTSTRAP_SERVERS'),
-    security_protocol='SASL_SSL',
-    sasl_mechanism='PLAIN',
-    sasl_plain_username=os.getenv('KAFKA_API_KEY'),
-    sasl_plain_password=os.getenv('KAFKA_API_SECRET'),
-    value_serializer=lambda x: json.dumps(x).encode('utf-8')
-)
+conf = {'bootstrap.servers': os.getenv('KAFKA_BOOTSTRAP_SERVERS'),
+        'security.protocol': 'SASL_SSL',
+        'sasl.mechanism': 'PLAIN',
+        'sasl.username': os.getenv('KAFKA_API_KEY'),
+        'sasl.password': os.getenv('KAFKA_API_SECRET'),
+        'client.id': socket.gethostname()}
+
+producer = Producer(conf)
+
+# producer = KafkaProducer(
+#     bootstrap_servers=os.getenv('KAFKA_BOOTSTRAP_SERVERS'),
+#     security_protocol='SASL_SSL',
+#     sasl_mechanism='PLAIN',
+#     sasl_plain_username=os.getenv('KAFKA_API_KEY'),
+#     sasl_plain_password=os.getenv('KAFKA_API_SECRET'),
+#     value_serializer=lambda x: json.dumps(x).encode('utf-8')
+# )
+
+# print('Bootstrap servers:', producer.config['bootstrap_servers'])
 
 def publish_to_kafka(topic, latitude, longitude, class_id):
     data = {'latitude': latitude, 'longitude': longitude, 'class_id': class_id}
