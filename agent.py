@@ -4,19 +4,21 @@ import cv2
 from kafka import KafkaProducer
 import json
 from kafka.errors import KafkaError
+import os
 
 producer = KafkaProducer(
-    bootstrap_servers=['localhost:9092'],
-    value_serializer=lambda v: json.dumps(v).encode('utf-8'),
-    retries=5,
-    # acks='all',  # Ensure all replicas ack the message
-    # linger_ms=100,  # Batch messages to reduce requests made to the server
-    # max_in_flight_requests_per_connection=5  # Maintain order within each partition
+    bootstrap_servers=os.getenv('KAFKA_BOOTSTRAP_SERVERS'),
+    security_protocol='SASL_SSL',
+    sasl_mechanism='PLAIN',
+    sasl_plain_username=os.getenv('KAFKA_API_KEY'),
+    sasl_plain_password=os.getenv('KAFKA_API_SECRET'),
+    value_serializer=lambda x: json.dumps(x).encode('utf-8')
 )
 
-def publish_to_kafka(topic, data):
+def publish_to_kafka(topic, latitude, longitude, class_id):
+    data = {'latitude': latitude, 'longitude': longitude, 'class_id': class_id}
     try:
-        producer.send(topic, data).get(timeout=10)  # Wait for send confirmation
+        producer.send(topic, data).get(timeout=10)
     except KafkaError as e:
         print(f"Failed to send data to Kafka: {e}")
     finally:
@@ -43,7 +45,8 @@ def create_detection(bbox, score, label):
     ground_contact_point = np.array([[ground_contact_x, ground_contact_y]])
     return Detection(points=ground_contact_point, scores=np.array([score]), label=label)
 
-# Main processing loop
+########################################### Main Processing Loop ###########################################
+
 from pipeless_agents_sdk.cloud import data_stream
 for payload in data_stream:
     detection_data = payload.value['data']
@@ -51,5 +54,8 @@ for payload in data_stream:
     tracked_objects = tracker.update(detections=detections)
     for tracked_object in tracked_objects:
         pixel_coordinate = tracked_object.estimate[0]
+        class_id = tracked_object.label
+        # Velocity = tracked_object.estimate_velocity * scale # pixels/second * meters/pixel
         gps_coordinate = pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv)
-        publish_to_kafka('gps_coordinates', {'gps': gps_coordinate.tolist()})
+        lat,long = gps_coordinate[0],gps_coordinate[1]
+        publish_to_kafka('gps_coordinates', lat, long, class_id)
