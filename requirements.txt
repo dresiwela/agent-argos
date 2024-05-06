@@ -1,6 +1,5 @@
 norfair
 numpy
 opencv-python-headless
-kafka-python
-confluent-kafka
-json5
+paho-mqtt
+certifi

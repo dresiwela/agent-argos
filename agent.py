@@ -1,51 +1,13 @@
-from norfair import Detection, Tracker
+from paho.mqtt import client as mqtt_client
+import certifi
+import json
 import numpy as np
 import cv2
-from kafka import KafkaProducer
-import json
-from kafka.errors import KafkaError
 import os
-from confluent_kafka import Producer
-import socket
-
-conf = {'bootstrap.servers': os.getenv('KAFKA_BOOTSTRAP_SERVERS'),
-        'security.protocol': 'SASL_SSL',
-        'sasl.mechanism': 'PLAIN',
-        'sasl.username': os.getenv('KAFKA_API_KEY'),
-        'sasl.password': os.getenv('KAFKA_API_SECRET'),
-        'client.id': socket.gethostname()}
-
-producer = Producer(conf)
-
-# producer = KafkaProducer(
-#     bootstrap_servers=os.getenv('KAFKA_BOOTSTRAP_SERVERS'),
-#     security_protocol='SASL_SSL',
-#     sasl_mechanism='PLAIN',
-#     sasl_plain_username=os.getenv('KAFKA_API_KEY'),
-#     sasl_plain_password=os.getenv('KAFKA_API_SECRET'),
-#     value_serializer=lambda x: json.dumps(x).encode('utf-8')
-# )
-
-# print('Bootstrap servers:', producer.config['bootstrap_servers'])
-
-def publish_to_kafka(topic, latitude, longitude, class_id):
-    data = {'latitude': latitude, 'longitude': longitude, 'class_id': class_id}
-    try:
-        producer.send(topic, data).get(timeout=10)
-    except KafkaError as e:
-        print(f"Failed to send data to Kafka: {e}")
-    finally:
-        producer.flush()
-
-tracker = Tracker(distance_function='mean_euclidean', distance_threshold=20)
-
-data = np.load('calibration_data.npz')
-K = data['K']
-dist = data['DistCoeffs']
-Hsat2cctv_inv = data['Hsat2cctv_inv']
-T_gps2sat_inv = data['Hgps2sat_inv']
+from norfair import Detection, Tracker
 
 def pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv):
+    # Convert pixel coordinates to GPS coordinates
     pixel_coordinate = np.float64(pixel_coordinate).reshape(-1, 1, 2)
     pixel_coordinate = cv2.undistortPoints(pixel_coordinate, K, dist, None, K)
     sat_pixel_coordinate = cv2.perspectiveTransform(pixel_coordinate, Hsat2cctv_inv)
@@ -58,16 +20,66 @@ def create_detection(bbox, score, label):
     ground_contact_point = np.array([[ground_contact_x, ground_contact_y]])
     return Detection(points=ground_contact_point, scores=np.array([score]), label=label)
 
-########################################### Main Processing Loop ###########################################
+def connect_mqtt():
+    # Connect to MQTT Broker
+    def on_connect(client, userdata, flags, rc):
+        if rc == 0:
+            print("Connected to MQTT Broker!")
+        else:
+            print(f"Failed to connect, return code {rc}")
+
+    def on_disconnect(client, userdata, rc):
+        if rc != 0:
+            print("Unexpected disconnection.")
+
+    client = mqtt_client.Client(client_id=client_id)
+    client.tls_set(ca_certs=certifi.where())  # Using certifi's CA bundle
+    client.username_pw_set(username, password)
+    client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
+
+    client.connect(broker, port)
+    client.loop_start()
+    return client
+
+# Load calibration data
+data = np.load('calibration_data.npz')
+K = data['K']
+dist = data['DistCoeffs']
+Hsat2cctv_inv = data['Hsat2cctv_inv']
+T_gps2sat_inv = data['Tgps2sat_inv']
+
+broker = os.getenv('mqtt_broker')
+port = 8883
+topic = 'argos/gps'
+client_id = 'python-mqtt-argos'
+username = os.getenv('username')
+password = os.getenv('password')
+
+client = connect_mqtt()
 
 from pipeless_agents_sdk.cloud import data_stream
-for payload in data_stream:
-    detection_data = payload.value['data']
-    detections = [create_detection(d['bbox'], d['score'], d['class_id']) for d in detection_data['data']]
-    tracked_objects = tracker.update(detections=detections)
-    for tracked_object in tracked_objects:
-        pixel_coordinate = tracked_object.estimate[0]
-        class_id = tracked_object.label
-        # Velocity = tracked_object.estimate_velocity * scale # pixels/second * meters/pixel
-        lat,long = pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv)
-        publish_to_kafka('gps_coordinates', lat, long, class_id)
+tracker = Tracker(distance_function='mean_euclidean', distance_threshold=20)
+
+try:
+    for payload in data_stream:
+        detection_data = payload.value['data']
+        detections = [Detection(points=np.array([[d['bbox'][0] + d['bbox'][2] / 2, d['bbox'][1] + d['bbox'][3]]]), scores=np.array([d['score']]), label=d['class_id']) for d in detection_data['data']]
+        tracked_objects = tracker.update(detections=detections)
+        for tracked_object in tracked_objects:
+            pixel_coordinate = tracked_object.estimate[0]
+            class_id = tracked_object.label
+            lat, long = pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv)
+            message = json.dumps({'latitude': lat, 'longitude': long, 'class_id': class_id})
+            if client.is_connected():
+                client.publish(topic, message, qos=1)
+            else:
+                print("Not connected to MQTT Broker. Attempting to reconnect.")
+                client.reconnect()
+except Exception as e:
+    print(f"An error occurred: {e}")
+finally:
+    client.loop_stop()
+    client.disconnect()
+
+
