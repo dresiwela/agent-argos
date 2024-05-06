@@ -1,3 +1,4 @@
+from pipeless_agents_sdk.cloud import data_stream
 from paho.mqtt import client as mqtt_client
 import certifi
 import json
@@ -58,12 +59,12 @@ password = os.getenv('password')
 
 client = connect_mqtt()
 
-from pipeless_agents_sdk.cloud import data_stream
 tracker = Tracker(distance_function='mean_euclidean', distance_threshold=20)
+
 
 for payload in data_stream:
     detection_data = payload.value['data']
-    detections = [create_detection(d['bbox'], d['score'], d['class_id']) for d in detection_data['data']]
+    detections = [create_detection(d['bbox'], d['score'], d['class_id']) for d in detection_data]
     tracked_objects = tracker.update(detections=detections)
     for tracked_object in tracked_objects:
         pixel_coordinate = tracked_object.estimate[0]
@@ -75,7 +76,6 @@ for payload in data_stream:
         else:
             print("Not connected to MQTT Broker. Attempting to reconnect.")
             client.reconnect()
-
 
 # except Exception as e:
 #     print(f"An error occurred: {e}")
