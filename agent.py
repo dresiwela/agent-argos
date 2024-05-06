@@ -39,7 +39,6 @@ def connect_mqtt():
     client.on_disconnect = on_disconnect
 
     client.connect(broker, port)
-    client.loop_start()
     return client
 
 # Load calibration data
@@ -62,6 +61,7 @@ from pipeless_agents_sdk.cloud import data_stream
 tracker = Tracker(distance_function='mean_euclidean', distance_threshold=20)
 
 for payload in data_stream:
+    client.loop()
     detection_data = payload.value['data']
     detections = [create_detection(d['bbox'], d['score'], d['class_id']) for d in detection_data['data']]
     tracked_objects = tracker.update(detections=detections)
