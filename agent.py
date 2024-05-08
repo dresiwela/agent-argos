@@ -61,7 +61,6 @@ client = connect_mqtt()
 
 tracker = Tracker(distance_function='mean_euclidean', distance_threshold=20)
 
-
 for payload in data_stream:
     detection_data = payload.value['data']
     detections = [create_detection(d['bbox'], d['score'], d['class_id']) for d in detection_data]
@@ -69,18 +68,16 @@ for payload in data_stream:
     for tracked_object in tracked_objects:
         pixel_coordinate = tracked_object.estimate[0]
         class_id = tracked_object.label
+        id = tracked_object.id
         lat, long = pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv)
-        message = json.dumps({'latitude': lat, 'longitude': long, 'class_id': class_id})
+        message = json.dumps({'latitude': lat, 'longitude': long, 'id': id, 'class_id': class_id})
         if client.is_connected():
             client.publish(topic, message, qos=1)
         else:
             print("Not connected to MQTT Broker. Attempting to reconnect.")
             client.reconnect()
 
-# except Exception as e:
-#     print(f"An error occurred: {e}")
-# finally:
-#     client.loop_stop()
-#     client.disconnect()
+client.loop_stop()
+client.disconnect()
 
 
