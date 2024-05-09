@@ -92,31 +92,30 @@ for payload in data_stream:
             prev_lat, prev_long, prev_time = prev_coordinates[obj_id]
             speed = calculate_speed((prev_lat, prev_long), (lat, long), now - prev_time)
             bearing = calculate_bearing((prev_lat, prev_long), (lat, long))
-        else:
-            speed = 0.0
-            bearing = None
 
-        # Update previous coordinates for this object
-        prev_coordinates[obj_id] = (lat, long, now)
+            # Update previous coordinates for this object
+            prev_coordinates[obj_id] = (lat, long, now)
 
-        # Prepare the message with speed and bearing
-        message = json.dumps({
-            'latitude': lat,
-            'longitude': long,
-            'id': obj_id,
-            'class_id': class_id,
-            'speed': speed,
-            'orientation': bearing
-        })
+            # Prepare the message with speed and bearing
+            message = json.dumps({
+                'latitude': lat,
+                'longitude': long,
+                'id': obj_id,
+                'class_id': class_id,
+                'speed': np.round(speed,2),
+                'orientation': bearing
+            })
 
-        # Publish to MQTT
-        if client.is_connected():
-            client.publish(topic, message, qos=1)
-        else:
-            print("Not connected to MQTT Broker. Attempting to reconnect.")
-            client.reconnect()
+            print(message)
 
-client.loop_stop()
-client.disconnect()
+            # Publish to MQTT
+            if client.is_connected():
+                client.publish(topic, message, qos=1)
+            else:
+                print("Not connected to MQTT Broker. Attempting to reconnect.")
+                client.reconnect()
+
+# client.loop_stop()
+# client.disconnect()
 
 
