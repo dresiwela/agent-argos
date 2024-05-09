@@ -78,6 +78,8 @@ tracker = Tracker(distance_function='mean_euclidean', distance_threshold=20)
 
 for payload in data_stream:
     detection_data = payload.value['data']
+    print(detection_data)
+
     detections = [create_detection(d['bbox'], d['score'], d['class_id']) for d in detection_data]
     tracked_objects = tracker.update(detections=detections)
     
@@ -105,8 +107,6 @@ for payload in data_stream:
             'speed': np.round(speed, 2),
             'orientation': bearing
         })
-
-        print(message)
 
         if client.is_connected():
             client.publish(topic, message, qos=1)
