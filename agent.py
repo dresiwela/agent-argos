@@ -80,40 +80,39 @@ for payload in data_stream:
     detection_data = payload.value['data']
     detections = [create_detection(d['bbox'], d['score'], d['class_id']) for d in detection_data]
     tracked_objects = tracker.update(detections=detections)
+    
+    now = time.time()
     for tracked_object in tracked_objects:
         pixel_coordinate = tracked_object.estimate[0]
         class_id = tracked_object.label
         obj_id = tracked_object.id
         lat, long = pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv)
 
-        # Calculate speed and bearing
-        now = time.time()
-        if obj_id in prev_coordinates:
-            prev_lat, prev_long, prev_time = prev_coordinates[obj_id]
-            speed = calculate_speed((prev_lat, prev_long), (lat, long), now - prev_time)
-            bearing = calculate_bearing((prev_lat, prev_long), (lat, long))
-
-            # Update previous coordinates for this object
+        if obj_id not in prev_coordinates:
             prev_coordinates[obj_id] = (lat, long, now)
+            continue
 
-            # Prepare the message with speed and bearing
-            message = json.dumps({
-                'latitude': lat,
-                'longitude': long,
-                'id': obj_id,
-                'class_id': class_id,
-                'speed': np.round(speed,2),
-                'orientation': bearing
-            })
+        prev_lat, prev_long, prev_time = prev_coordinates[obj_id]
+        speed = calculate_speed((prev_lat, prev_long), (lat, long), now - prev_time)
+        bearing = calculate_bearing((prev_lat, prev_long), (lat, long))
+        prev_coordinates[obj_id] = (lat, long, now)
 
-            print(message)
+        message = json.dumps({
+            'latitude': lat,
+            'longitude': long,
+            'id': obj_id,
+            'class_id': class_id,
+            'speed': np.round(speed, 2),
+            'orientation': bearing
+        })
 
-            # Publish to MQTT
-            if client.is_connected():
-                client.publish(topic, message, qos=1)
-            else:
-                print("Not connected to MQTT Broker. Attempting to reconnect.")
-                client.reconnect()
+        print(message)
+
+        if client.is_connected():
+            client.publish(topic, message, qos=1)
+        else:
+            print("Not connected to MQTT Broker. Attempting to reconnect.")
+            client.reconnect()
 
 # client.loop_stop()
 # client.disconnect()
