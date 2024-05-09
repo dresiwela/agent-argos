@@ -6,6 +6,21 @@ import numpy as np
 import cv2
 import os
 from norfair import Detection, Tracker
+from geopy.distance import geodesic
+from geographiclib.geodesic import Geodesic
+import time
+
+prev_coordinates = {}
+
+def calculate_speed(coord1, coord2, dt):
+    if dt <= 0:
+        return 0.0
+    distance_m = geodesic(coord1, coord2).meters
+    return distance_m / dt
+
+def calculate_bearing(coord1, coord2):
+    result = Geodesic.WGS84.Inverse(coord1[0], coord1[1], coord2[0], coord2[1])
+    return result['azi1'] % 360
 
 def pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv):
     # Convert pixel coordinates to GPS coordinates
@@ -68,9 +83,33 @@ for payload in data_stream:
     for tracked_object in tracked_objects:
         pixel_coordinate = tracked_object.estimate[0]
         class_id = tracked_object.label
-        id = tracked_object.id
+        obj_id = tracked_object.id
         lat, long = pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv)
-        message = json.dumps({'latitude': lat, 'longitude': long, 'id': id, 'class_id': class_id})
+
+        # Calculate speed and bearing
+        now = time.time()
+        if obj_id in prev_coordinates:
+            prev_lat, prev_long, prev_time = prev_coordinates[obj_id]
+            speed = calculate_speed((prev_lat, prev_long), (lat, long), now - prev_time)
+            bearing = calculate_bearing((prev_lat, prev_long), (lat, long))
+        else:
+            speed = 0.0
+            bearing = None
+
+        # Update previous coordinates for this object
+        prev_coordinates[obj_id] = (lat, long, now)
+
+        # Prepare the message with speed and bearing
+        message = json.dumps({
+            'latitude': lat,
+            'longitude': long,
+            'id': obj_id,
+            'class_id': class_id,
+            'speed': speed,
+            'orientation': bearing
+        })
+
+        # Publish to MQTT
         if client.is_connected():
             client.publish(topic, message, qos=1)
         else:
