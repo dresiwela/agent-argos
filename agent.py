@@ -76,7 +76,24 @@ client = connect_mqtt()
 
 tracker = Tracker(distance_function='mean_euclidean', distance_threshold=20)
 
+payload_times = []
+last_time = time.time()
+
 for payload in data_stream:
+
+    current_time = time.time()
+    time_since_last_payload = current_time - last_time
+    payload_times.append(time_since_last_payload)
+    last_time = current_time
+
+    if len(payload_times) > 1:
+        average_time = sum(payload_times) / len(payload_times)
+    else:
+        average_time = time_since_last_payload
+
+    print(f"Time: {time_since_last_payload:.2f}s | Average: {average_time:.2f}s")
+
+
     detection_data = payload.value['data']
     detections = [create_detection(d['bbox'], d['score'], d['class_id']) for d in detection_data]
     tracked_objects = tracker.update(detections=detections)
@@ -106,9 +123,6 @@ for payload in data_stream:
             'speed': np.round(speed, 2),
             'orientation': bearing
         }
-
-    if not frame_data:
-        continue
 
     if client.is_connected():
         client.publish(topic, json.dumps(frame_data), qos=1)
