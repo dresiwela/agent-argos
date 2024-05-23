@@ -93,7 +93,6 @@ for payload in data_stream:
         lat, long = pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv)
         lat = lat + lat_offset
         long = long + long_offset
-        print(pixel_coordinate,lat,long)
 
         if obj_id not in prev_coordinates:
             prev_coordinates[obj_id] = (lat, long, now)
@@ -111,7 +110,8 @@ for payload in data_stream:
             'speed': np.round(speed, 2),
             'orientation': bearing
         }
-
+        
+    print("Active Targets: ", len(frame_data))
     if client.is_connected():
         client.publish(topic, json.dumps(frame_data), qos=1)
     else:
