@@ -76,28 +76,36 @@ client = connect_mqtt()
 
 tracker = Tracker(distance_function='mean_euclidean', distance_threshold=40)
 
-unique_id_counter = 0
 for payload in data_stream:
     detection_data = payload.value['data']
     detections = [create_detection(d['bbox'], d['score'], d['class_id']) for d in detection_data]
-    frame_data = []
+    tracked_objects = tracker.update(detections=detections)
 
-    for detection in detections:
-        pixel_coordinate = detection.points[0]
-        class_id = detection.label
+    now = time.time()
+    frame_data = {}
+
+    for tracked_object in tracked_objects:
+        pixel_coordinate = tracked_object.estimate[0]
+        class_id = tracked_object.label
+        obj_id = tracked_object.id
         lat, long = pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv)
 
-        unique_id_counter += 1
-        detection_id = unique_id_counter
+        if obj_id not in prev_coordinates:
+            prev_coordinates[obj_id] = (lat, long, now)
+            continue
 
-        frame_data.append({
+        prev_lat, prev_long, prev_time = prev_coordinates[obj_id]
+        speed = calculate_speed((prev_lat, prev_long), (lat, long), now - prev_time)
+        bearing = calculate_bearing((prev_lat, prev_long), (lat, long))
+        prev_coordinates[obj_id] = (lat, long, now)
+
+        frame_data[obj_id] = {
             'latitude': lat,
             'longitude': long,
-            'id': detection_id,
             'class_id': class_id,
-            'speed': 0.0,  # Speed and orientation are placeholders
-            'orientation': 0.0
-        })
+            'speed': np.round(speed, 2),
+            'orientation': bearing
+        }
 
     if client.is_connected():
         client.publish(topic, json.dumps(frame_data), qos=1)
@@ -105,45 +113,38 @@ for payload in data_stream:
         print("Not connected to MQTT Broker. Attempting to reconnect.")
         client.reconnect()
 
+print("Done")
+# client.loop_stop()
+# client.disconnect()
+
+
+
+
+# unique_id_counter = 0
 # for payload in data_stream:
 #     detection_data = payload.value['data']
 #     detections = [create_detection(d['bbox'], d['score'], d['class_id']) for d in detection_data]
-#     tracked_objects = tracker.update(detections=detections)
+#     frame_data = []
 
-#     now = time.time()
-#     frame_data = {}
-
-#     for tracked_object in tracked_objects:
-#         pixel_coordinate = tracked_object.estimate[0]
-#         class_id = tracked_object.label
-#         obj_id = tracked_object.id
+#     for detection in detections:
+#         pixel_coordinate = detection.points[0]
+#         class_id = detection.label
 #         lat, long = pixel_to_gps(pixel_coordinate, K, dist, Hsat2cctv_inv, T_gps2sat_inv)
 
-#         if obj_id not in prev_coordinates:
-#             prev_coordinates[obj_id] = (lat, long, now)
-#             continue
+#         unique_id_counter += 1
+#         detection_id = unique_id_counter
 
-#         prev_lat, prev_long, prev_time = prev_coordinates[obj_id]
-#         speed = calculate_speed((prev_lat, prev_long), (lat, long), now - prev_time)
-#         bearing = calculate_bearing((prev_lat, prev_long), (lat, long))
-#         prev_coordinates[obj_id] = (lat, long, now)
-
-#         frame_data[obj_id] = {
+#         frame_data.append({
 #             'latitude': lat,
 #             'longitude': long,
+#             'id': detection_id,
 #             'class_id': class_id,
-#             'speed': np.round(speed, 2),
-#             'orientation': bearing
-#         }
+#             'speed': 0.0,  # Speed and orientation are placeholders
+#             'orientation': 0.0
+#         })
 
 #     if client.is_connected():
 #         client.publish(topic, json.dumps(frame_data), qos=1)
 #     else:
 #         print("Not connected to MQTT Broker. Attempting to reconnect.")
 #         client.reconnect()
-
-print("Done")
-# client.loop_stop()
-# client.disconnect()
-
-
